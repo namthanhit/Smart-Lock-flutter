@@ -18,6 +18,7 @@ class FirebaseService {
     _lastRequestTime = DateTime.now().millisecondsSinceEpoch;
   }
 
+  // Away Mode methods
   Future<bool> getAwayMode() async {
     await _rateLimitRequest();
     try {
@@ -37,6 +38,17 @@ class FirebaseService {
     }
   }
 
+  /// Stream để lắng nghe thay đổi awayMode realtime
+  Stream<bool> getAwayModeStream() {
+    return _db.child('awayMode').onValue.map((event) {
+      if (event.snapshot.exists) {
+        return event.snapshot.value as bool;
+      }
+      return false;
+    });
+  }
+
+  // Access Logs methods
   Future<List<AccessLog>> getLogs() async {
     await _rateLimitRequest();
     try {
@@ -59,6 +71,45 @@ class FirebaseService {
     }
   }
 
+  /// Stream để lắng nghe thay đổi logs realtime
+  Stream<List<AccessLog>> getLogsStream() {
+    return _db.child('logs').onValue.map((event) {
+      if (!event.snapshot.exists) return <AccessLog>[];
+
+      final logList = <AccessLog>[];
+      for (var entry in event.snapshot.children) {
+        try {
+          final data = Map<String, dynamic>.from(entry.value as Map);
+          logList.add(AccessLog(
+            method: data['method'] as String,
+            success: data['success'] as bool,
+            timestamp: data['timestamp'] as int,
+          ));
+        } catch (e) {
+          // Skip invalid log entries
+          continue;
+        }
+      }
+      logList.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return logList;
+    });
+  }
+
+  /// Method để thêm log mới
+  Future<void> addLog(AccessLog log) async {
+    await _rateLimitRequest();
+    try {
+      await _db.child('logs').push().set({
+        'method': log.method,
+        'success': log.success,
+        'timestamp': log.timestamp,
+      });
+    } catch (e) {
+      throw Exception('Lỗi thêm log: $e');
+    }
+  }
+
+  // OTP methods
   Future<List<OtpLog>> getOtpLogs() async {
     await _rateLimitRequest();
     try {
@@ -82,23 +133,29 @@ class FirebaseService {
     }
   }
 
-  Future<String?> getMasterPassword() async {
-    await _rateLimitRequest();
-    try {
-      final snap = await _db.child('masterPassword').get();
-      return snap.value as String? ?? '123456';
-    } catch (e) {
-      throw Exception('Lỗi lấy mật khẩu chính: $e');
-    }
-  }
+  /// Stream để lắng nghe thay đổi OTP history realtime
+  Stream<List<OtpLog>> getOtpLogsStream() {
+    return _db.child('otpHistory').onValue.map((event) {
+      if (!event.snapshot.exists) return <OtpLog>[];
 
-  Future<void> setMasterPassword(String password) async {
-    await _rateLimitRequest();
-    try {
-      await _db.child('masterPassword').set(password);
-    } catch (e) {
-      throw Exception('Lỗi cập nhật mật khẩu: $e');
-    }
+      final otpList = <OtpLog>[];
+      for (var entry in event.snapshot.children) {
+        try {
+          final data = Map<String, dynamic>.from(entry.value as Map);
+          otpList.add(OtpLog(
+            code: data['code'] as String,
+            expireAt: data['expireAt'] as int,
+            used: data['used'] as bool,
+            createdAt: data['createdAt'] as int,
+          ));
+        } catch (e) {
+          // Skip invalid OTP entries
+          continue;
+        }
+      }
+      otpList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return otpList;
+    });
   }
 
   Future<void> createOtp(String code, int expireAt) async {
@@ -124,5 +181,163 @@ class FirebaseService {
     } catch (e) {
       throw Exception('Lỗi tạo OTP: $e');
     }
+  }
+
+  /// Stream để lắng nghe OTP hiện tại
+  Stream<Map<String, dynamic>?> getCurrentOtpStream() {
+    return _db.child('otp').onValue.map((event) {
+      if (event.snapshot.exists) {
+        return Map<String, dynamic>.from(event.snapshot.value as Map);
+      }
+      return null;
+    });
+  }
+
+  /// Method để đánh dấu OTP đã sử dụng
+  Future<void> markOtpAsUsed(String code) async {
+    await _rateLimitRequest();
+    try {
+      // Cập nhật OTP hiện tại
+      await _db.child('otp/used').set(true);
+
+      // Cập nhật trong lịch sử OTP
+      final snap = await _db.child('otpHistory').get();
+      if (snap.exists) {
+        for (var entry in snap.children) {
+          final data = Map<String, dynamic>.from(entry.value as Map);
+          if (data['code'] == code && !(data['used'] as bool)) {
+            await entry.ref.update({'used': true});
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      throw Exception('Lỗi cập nhật trạng thái OTP: $e');
+    }
+  }
+
+  // Master Password methods
+  Future<String?> getMasterPassword() async {
+    await _rateLimitRequest();
+    try {
+      final snap = await _db.child('masterPassword').get();
+      return snap.value as String? ?? '123456';
+    } catch (e) {
+      throw Exception('Lỗi lấy mật khẩu chính: $e');
+    }
+  }
+
+  Future<void> setMasterPassword(String password) async {
+    await _rateLimitRequest();
+    try {
+      await _db.child('masterPassword').set(password);
+    } catch (e) {
+      throw Exception('Lỗi cập nhật mật khẩu: $e');
+    }
+  }
+
+  /// Stream để lắng nghe thay đổi master password
+  Stream<String> getMasterPasswordStream() {
+    return _db.child('masterPassword').onValue.map((event) {
+      if (event.snapshot.exists) {
+        return event.snapshot.value as String;
+      }
+      return '123456';
+    });
+  }
+
+  // Statistics methods
+  /// Stream để lắng nghe thống kê realtime
+  Stream<Map<String, int>> getStatsStream() {
+    return getLogsStream().map((logs) {
+      int successCount = 0;
+      int failureCount = 0;
+      int todayCount = 0;
+
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day).millisecondsSinceEpoch ~/ 1000;
+
+      for (var log in logs) {
+        if (log.success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+
+        if (log.timestamp >= todayStart) {
+          todayCount++;
+        }
+      }
+
+      return {
+        'total': logs.length,
+        'success': successCount,
+        'failure': failureCount,
+        'today': todayCount,
+      };
+    });
+  }
+
+  // Cleanup methods
+  /// Method để xóa logs cũ
+  Future<void> cleanupOldLogs({int keepLastDays = 30}) async {
+    await _rateLimitRequest();
+    try {
+      final cutoffTime = DateTime.now().subtract(Duration(days: keepLastDays)).millisecondsSinceEpoch ~/ 1000;
+      final snap = await _db.child('logs').get();
+
+      if (snap.exists) {
+        final batch = <String>[];
+        for (var entry in snap.children) {
+          final data = Map<String, dynamic>.from(entry.value as Map);
+          if ((data['timestamp'] as int) < cutoffTime) {
+            batch.add(entry.key!);
+          }
+        }
+
+        // Xóa theo batch để tránh rate limit
+        for (var key in batch) {
+          await _db.child('logs/$key').remove();
+          await Future.delayed(const Duration(milliseconds: 100)); // Throttle deletions
+        }
+      }
+    } catch (e) {
+      throw Exception('Lỗi xóa logs cũ: $e');
+    }
+  }
+
+  /// Method để xóa OTP history cũ
+  Future<void> cleanupOldOtpHistory({int keepLastDays = 30}) async {
+    await _rateLimitRequest();
+    try {
+      final cutoffTime = DateTime.now().subtract(Duration(days: keepLastDays)).millisecondsSinceEpoch ~/ 1000;
+      final snap = await _db.child('otpHistory').get();
+
+      if (snap.exists) {
+        final batch = <String>[];
+        for (var entry in snap.children) {
+          final data = Map<String, dynamic>.from(entry.value as Map);
+          if ((data['createdAt'] as int) < cutoffTime) {
+            batch.add(entry.key!);
+          }
+        }
+
+        // Xóa theo batch
+        for (var key in batch) {
+          await _db.child('otpHistory/$key').remove();
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+      }
+    } catch (e) {
+      throw Exception('Lỗi xóa OTP history cũ: $e');
+    }
+  }
+
+  // Connection status
+  /// Stream để theo dõi trạng thái kết nối
+  Stream<bool> getConnectionStream() {
+    return _db.child('.info/connected').onValue.map((event) {
+      return event.snapshot.value as bool? ?? false;
+    });
   }
 }

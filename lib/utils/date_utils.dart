@@ -6,7 +6,10 @@ class AppDateUtils {
     return DateFormat('dd/MM/yyyy HH:mm:ss').format(date);
   }
 
-  static String formatCountdown(int expireAt) {
+  static String formatCountdown(int expireAt, {bool isUsed = false}) {
+    // Nếu OTP đã được sử dụng, hiển thị "Hết hạn"
+    if (isUsed) return 'Hết hạn';
+
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final remainingSeconds = expireAt - now;
     if (remainingSeconds <= 0) return 'Hết hạn';

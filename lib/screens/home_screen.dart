@@ -24,15 +24,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _awayMode = false;
   bool _isLoading = false;
-  List<AccessLog> _logs = [];
   List<OtpLog> _otpLogs = [];
   double _otpDuration = 5;
   Timer? _timer;
 
+  // Stream subscriptions
+  StreamSubscription? _awayModeSubscription;
+  StreamSubscription? _otpLogsSubscription;
+
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _initializeStreams();
+    _loadInitialOtpLogs(); // Backup load for OTP logs
+
     // Khởi tạo timer để cập nhật đếm ngược mỗi giây
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {}); // Cập nhật UI để hiển thị thời gian đếm ngược
@@ -46,48 +51,58 @@ class _HomeScreenState extends State<HomeScreen> {
     _confirmPassCtrl.dispose();
     _newPassConfirmCtrl.dispose();
     _timer?.cancel();
+    _awayModeSubscription?.cancel();
+    _otpLogsSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadInitialData() async {
-    setState(() => _isLoading = true);
-    try {
-      await Future.wait([
-        _loadAwayMode(),
-        _loadLogs(),
-        _loadOtpLogs(),
-      ]);
-    } catch (e) {
-      _showSnackBar('Lỗi tải dữ liệu: $e', isError: true);
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  void _initializeStreams() {
+    // Listen to away mode changes
+    _awayModeSubscription = _firebaseService.getAwayModeStream().listen(
+          (awayMode) {
+        if (mounted) {
+          setState(() => _awayMode = awayMode);
+        }
+      },
+      onError: (error) {
+        _showSnackBar('Lỗi kết nối away mode: $error', isError: true);
+      },
+    );
+
+    // Listen to OTP logs changes
+    _otpLogsSubscription = _firebaseService.getOtpLogsStream().listen(
+          (otpLogs) {
+        if (mounted) {
+          setState(() => _otpLogs = otpLogs);
+        }
+      },
+      onError: (error) {
+        _showSnackBar('Lỗi kết nối OTP logs: $error', isError: true);
+      },
+    );
   }
 
-  Future<void> _loadAwayMode() async {
-    try {
-      final awayMode = await _firebaseService.getAwayMode();
-      setState(() => _awayMode = awayMode);
-    } catch (e) {
-      _showSnackBar(e.toString(), isError: true);
-    }
-  }
-
-  Future<void> _loadLogs() async {
-    try {
-      final logs = await _firebaseService.getLogs();
-      setState(() => _logs = logs);
-    } catch (e) {
-      _showSnackBar(e.toString(), isError: true);
-    }
-  }
-
-  Future<void> _loadOtpLogs() async {
+  Future<void> _loadInitialOtpLogs() async {
     try {
       final otpLogs = await _firebaseService.getOtpLogs();
-      setState(() => _otpLogs = otpLogs);
+      if (mounted) {
+        setState(() => _otpLogs = otpLogs);
+      }
     } catch (e) {
-      _showSnackBar(e.toString(), isError: true);
+      _showSnackBar('Lỗi tải OTP logs: $e', isError: true);
+    }
+  }
+
+  Future<void> _refreshData() async {
+    setState(() => _isLoading = true);
+    try {
+      // Streams sẽ tự động cập nhật, chỉ cần load backup data
+      await _loadInitialOtpLogs();
+      _showSnackBar('Đã làm mới dữ liệu');
+    } catch (e) {
+      _showSnackBar('Lỗi làm mới: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -153,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _firebaseService.createOtp(_otpCtrl.text, timestamp);
       _showSnackBar('OTP đã được tạo, hiệu lực ${_otpDuration.toInt()} phút');
       _otpCtrl.clear();
-      await _loadOtpLogs();
+      // OTP logs sẽ tự động cập nhật qua stream
     } catch (e) {
       _showSnackBar(e.toString(), isError: true);
     } finally {
@@ -191,24 +206,24 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleAwayMode(bool value) async {
     if (!await _verifyMasterPassword(context)) {
       _showSnackBar('Mật khẩu chính không đúng', isError: true);
-      setState(() => _awayMode = !value);
+      // Không cần revert state vì stream sẽ tự động cập nhật
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      setState(() => _awayMode = value);
       await _firebaseService.setAwayMode(value);
-      _showSnackBar('Chế độ vắng nhà ${_awayMode ? 'bật' : 'tắt'}');
+      _showSnackBar('Chế độ vắng nhà ${value ? 'bật' : 'tắt'}');
+      // Away mode sẽ tự động cập nhật qua stream
     } catch (e) {
       _showSnackBar(e.toString(), isError: true);
-      setState(() => _awayMode = !value);
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -229,21 +244,73 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
+        actions: [
+          // Connection status indicator
+          StreamBuilder<bool>(
+            stream: _firebaseService.getConnectionStream(),
+            builder: (context, snapshot) {
+              final isConnected = snapshot.data ?? false;
+              return Container(
+                margin: const EdgeInsets.only(right: 16),
+                child: Icon(
+                  isConnected ? Icons.wifi : Icons.wifi_off,
+                  color: isConnected ? Colors.white : Colors.red.shade300,
+                  size: 20,
+                ),
+              );
+            },
+          ),
+        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-        onRefresh: _loadInitialData,
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
         child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Connection status banner
+              StreamBuilder<bool>(
+                stream: _firebaseService.getConnectionStream(),
+                builder: (context, snapshot) {
+                  final isConnected = snapshot.data ?? true;
+                  if (isConnected) return const SizedBox.shrink();
+
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.wifi_off, color: Colors.orange.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Mất kết nối - Dữ liệu có thể không cập nhật',
+                            style: TextStyle(
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
               AwayModeCard(
                 awayMode: _awayMode,
                 onChanged: _toggleAwayMode,
               ),
               const SizedBox(height: 16),
+
               OtpCard(
                 otpController: _otpCtrl,
                 otpDuration: _otpDuration,
@@ -252,8 +319,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 isLoading: _isLoading,
               ),
               const SizedBox(height: 16),
+
               OtpHistoryCard(otpLogs: _otpLogs),
               const SizedBox(height: 16),
+
               PasswordCard(
                 mainPassController: _mainPassCtrl,
                 newPassConfirmController: _newPassConfirmCtrl,
@@ -261,7 +330,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 isLoading: _isLoading,
               ),
               const SizedBox(height: 16),
-              LogsSection(logs: _logs),
+
+              // LogsSection không cần truyền logs nữa
+              const LogsSection(),
+
+              // Add some bottom padding
+              const SizedBox(height: 32),
             ],
           ),
         ),

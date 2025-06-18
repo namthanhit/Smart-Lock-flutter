@@ -30,23 +30,35 @@ class OtpHistoryCard extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final otp = otpLogs[index];
                   final isExpired = (DateTime.now().millisecondsSinceEpoch ~/ 1000) > otp.expireAt;
+
+                  // Xác định trạng thái: Ưu tiên "Đã dùng" nếu OTP đã được sử dụng
+                  String status;
+                  Color iconColor;
+                  IconData iconData;
+
+                  if (otp.used) {
+                    status = 'Đã dùng';
+                    iconColor = Colors.green;
+                    iconData = Icons.check_circle;
+                  } else if (isExpired) {
+                    status = 'Hết hạn';
+                    iconColor = Colors.red;
+                    iconData = Icons.cancel;
+                  } else {
+                    status = 'Còn hiệu lực';
+                    iconColor = Colors.blue;
+                    iconData = Icons.timer;
+                  }
+
                   return ListTile(
                     leading: Icon(
-                      otp.used
-                          ? Icons.check_circle
-                          : isExpired
-                          ? Icons.cancel
-                          : Icons.timer,
-                      color: otp.used
-                          ? Colors.green
-                          : isExpired
-                          ? Colors.red
-                          : Colors.blue,
+                      iconData,
+                      color: iconColor,
                     ),
                     title: Text('Mã OTP: ${otp.code}'),
                     subtitle: Text(
-                        'Tạo lúc: ${AppDateUtils.formatTimestamp(otp.createdAt)}\nHiệu lực: ${AppDateUtils.formatCountdown(otp.expireAt)}'),
-                    trailing: Text(otp.used ? 'Đã dùng' : isExpired ? 'Hết hạn' : 'Còn hiệu lực'),
+                        'Tạo lúc: ${AppDateUtils.formatTimestamp(otp.createdAt)}\nHiệu lực: ${AppDateUtils.formatCountdown(otp.expireAt, isUsed: otp.used)}'),
+                    trailing: Text(status),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   );
                 },

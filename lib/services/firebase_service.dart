@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/access_log.dart';
+import 'dart:math'; // Import thư viện 'dart:math' để sử dụng Random
 
 class FirebaseService {
   static final _instance = FirebaseService._internal();
@@ -158,6 +159,7 @@ class FirebaseService {
     });
   }
 
+  // Phương thức tạo OTP với mã cụ thể (giữ nguyên nếu cần dùng lại)
   Future<void> createOtp(String code, int expireAt) async {
     await _rateLimitRequest();
     try {
@@ -182,6 +184,20 @@ class FirebaseService {
       throw Exception('Lỗi tạo OTP: $e');
     }
   }
+
+  // Phương thức hỗ trợ tạo OTP ngẫu nhiên 6 chữ số
+  String _generateRandomOtpCode() {
+    final random = Random();
+    // Tạo số ngẫu nhiên từ 100000 đến 999999
+    return (random.nextInt(900000) + 100000).toString();
+  }
+
+  /// Phương thức tạo OTP ngẫu nhiên 6 chữ số và lưu vào Firebase
+  Future<void> createRandomOtp(int expireAt) async {
+    final code = _generateRandomOtpCode();
+    await createOtp(code, expireAt); // Tái sử dụng logic lưu OTP hiện có
+  }
+
 
   /// Stream để lắng nghe OTP hiện tại
   Stream<Map<String, dynamic>?> getCurrentOtpStream() {

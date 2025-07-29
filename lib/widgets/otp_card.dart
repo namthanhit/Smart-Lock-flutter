@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class OtpCard extends StatelessWidget {
-  final TextEditingController otpController;
+  // final TextEditingController otpController; // KHÔNG CẦN NỮA
   final double otpDuration;
   final Function(double) onDurationChanged;
   final VoidCallback onCreateOtp;
@@ -9,7 +9,7 @@ class OtpCard extends StatelessWidget {
 
   const OtpCard({
     super.key,
-    required this.otpController,
+    // required this.otpController, // KHÔNG CẦN NỮA
     required this.otpDuration,
     required this.onDurationChanged,
     required this.onCreateOtp,
@@ -26,14 +26,10 @@ class OtpCard extends StatelessWidget {
           children: [
             const Text('Tạo OTP', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
-            TextField(
-              controller: otpController,
-              decoration: const InputDecoration(
-                labelText: 'OTP (1 lần)',
-                hintText: 'Nhập mã OTP',
-                prefixIcon: Icon(Icons.lock),
-              ),
-              keyboardType: TextInputType.number,
+            // TextField đã bị loại bỏ
+            const Text(
+              'Mã OTP sẽ được tạo ngẫu nhiên 6 chữ số.', // Thông báo cho người dùng
+              style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic, color: Colors.grey),
             ),
             const SizedBox(height: 12),
             Row(

@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/access_log.dart';
@@ -7,6 +8,7 @@ import '../widgets/otp_card.dart';
 import '../widgets/otp_history_card.dart';
 import '../widgets/password_card.dart';
 import '../widgets/logs_section.dart';
+// import 'package:shared_preferences/shared_preferences.dart'; // Vẫn cần nếu dùng cho mục đích khác, nhưng không phải cho noti logs
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +19,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _firebaseService = FirebaseService();
-  final _otpCtrl = TextEditingController();
   final _mainPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   final _newPassConfirmCtrl = TextEditingController();
@@ -31,33 +32,34 @@ class _HomeScreenState extends State<HomeScreen> {
   // Stream subscriptions
   StreamSubscription? _awayModeSubscription;
   StreamSubscription? _otpLogsSubscription;
+  StreamSubscription? _logsSubscription;
+
 
   @override
   void initState() {
     super.initState();
     _initializeStreams();
+    _listenToAccessLogs(); // Vẫn lắng nghe để hiển thị logs trên UI, nhưng không push noti
     _loadInitialOtpLogs(); // Backup load for OTP logs
 
-    // Khởi tạo timer để cập nhật đếm ngược mỗi giây
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {}); // Cập nhật UI để hiển thị thời gian đếm ngược
+      setState(() {});
     });
   }
 
   @override
   void dispose() {
-    _otpCtrl.dispose();
     _mainPassCtrl.dispose();
     _confirmPassCtrl.dispose();
     _newPassConfirmCtrl.dispose();
     _timer?.cancel();
     _awayModeSubscription?.cancel();
     _otpLogsSubscription?.cancel();
+    _logsSubscription?.cancel(); // Đảm bảo hủy subscription này
     super.dispose();
   }
 
   void _initializeStreams() {
-    // Listen to away mode changes
     _awayModeSubscription = _firebaseService.getAwayModeStream().listen(
           (awayMode) {
         if (mounted) {
@@ -69,7 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
 
-    // Listen to OTP logs changes
     _otpLogsSubscription = _firebaseService.getOtpLogsStream().listen(
           (otpLogs) {
         if (mounted) {
@@ -80,6 +81,19 @@ class _HomeScreenState extends State<HomeScreen> {
         _showSnackBar('Lỗi kết nối OTP logs: $error', isError: true);
       },
     );
+  }
+
+  // Phương thức lắng nghe Access Logs - CHỈ ĐỂ CẬP NHẬT UI, KHÔNG GỬI THÔNG BÁO
+  void _listenToAccessLogs() {
+    _logsSubscription = _firebaseService.getLogsStream().listen((logs) {
+      if (logs.isNotEmpty && mounted) {
+        final AccessLog latestLog = logs.first; // Lấy log mới nhất để hiển thị nếu cần
+
+        print('New Access Log detected (for UI): Method: ${latestLog.method}, Success: ${latestLog.success}, AwayMode: $_awayMode, Timestamp: ${latestLog.timestamp}');
+      }
+    }, onError: (error) {
+      _showSnackBar('Lỗi kết nối Access logs: $error', isError: true);
+    });
   }
 
   Future<void> _loadInitialOtpLogs() async {
@@ -96,7 +110,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _refreshData() async {
     setState(() => _isLoading = true);
     try {
-      // Streams sẽ tự động cập nhật, chỉ cần load backup data
       await _loadInitialOtpLogs();
       _showSnackBar('Đã làm mới dữ liệu');
     } catch (e) {
@@ -150,10 +163,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _createOTP() async {
-    if (_otpCtrl.text.isEmpty) {
-      _showSnackBar('Vui lòng nhập OTP', isError: true);
-      return;
-    }
     if (!await _verifyMasterPassword(context)) {
       _showSnackBar('Mật khẩu chính không đúng', isError: true);
       return;
@@ -165,10 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final expire = now.add(Duration(minutes: _otpDuration.toInt()));
       final timestamp = expire.millisecondsSinceEpoch ~/ 1000;
 
-      await _firebaseService.createOtp(_otpCtrl.text, timestamp);
-      _showSnackBar('OTP đã được tạo, hiệu lực ${_otpDuration.toInt()} phút');
-      _otpCtrl.clear();
-      // OTP logs sẽ tự động cập nhật qua stream
+      await _firebaseService.createRandomOtp(timestamp);
+      _showSnackBar('OTP đã được tạo ngẫu nhiên, hiệu lực ${_otpDuration.toInt()} phút');
     } catch (e) {
       _showSnackBar(e.toString(), isError: true);
     } finally {
@@ -206,7 +213,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleAwayMode(bool value) async {
     if (!await _verifyMasterPassword(context)) {
       _showSnackBar('Mật khẩu chính không đúng', isError: true);
-      // Không cần revert state vì stream sẽ tự động cập nhật
       return;
     }
 
@@ -214,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _firebaseService.setAwayMode(value);
       _showSnackBar('Chế độ vắng nhà ${value ? 'bật' : 'tắt'}');
-      // Away mode sẽ tự động cập nhật qua stream
     } catch (e) {
       _showSnackBar(e.toString(), isError: true);
     } finally {
@@ -245,7 +250,6 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         actions: [
-          // Connection status indicator
           StreamBuilder<bool>(
             stream: _firebaseService.getConnectionStream(),
             builder: (context, snapshot) {
@@ -270,7 +274,6 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Connection status banner
               StreamBuilder<bool>(
                 stream: _firebaseService.getConnectionStream(),
                 builder: (context, snapshot) {
@@ -304,25 +307,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
-
               AwayModeCard(
                 awayMode: _awayMode,
                 onChanged: _toggleAwayMode,
               ),
               const SizedBox(height: 16),
-
               OtpCard(
-                otpController: _otpCtrl,
                 otpDuration: _otpDuration,
                 onDurationChanged: (value) => setState(() => _otpDuration = value),
                 onCreateOtp: _createOTP,
                 isLoading: _isLoading,
               ),
               const SizedBox(height: 16),
-
               OtpHistoryCard(otpLogs: _otpLogs),
               const SizedBox(height: 16),
-
               PasswordCard(
                 mainPassController: _mainPassCtrl,
                 newPassConfirmController: _newPassConfirmCtrl,
@@ -330,11 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 isLoading: _isLoading,
               ),
               const SizedBox(height: 16),
-
-              // LogsSection không cần truyền logs nữa
               const LogsSection(),
-
-              // Add some bottom padding
               const SizedBox(height: 32),
             ],
           ),

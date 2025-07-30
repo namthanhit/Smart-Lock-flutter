@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart
+// lib/screens/home_screen.dart (Cập nhật file này)
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/access_log.dart';
@@ -8,7 +8,7 @@ import '../widgets/otp_card.dart';
 import '../widgets/otp_history_card.dart';
 import '../widgets/password_card.dart';
 import '../widgets/logs_section.dart';
-// import 'package:shared_preferences/shared_preferences.dart'; // Vẫn cần nếu dùng cho mục đích khác, nhưng không phải cho noti logs
+import '../widgets/card_management_section.dart'; // Import widget mới
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _mainPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   final _newPassConfirmCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   bool _awayMode = false;
   bool _isLoading = false;
@@ -39,12 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initializeStreams();
-    _listenToAccessLogs(); // Vẫn lắng nghe để hiển thị logs trên UI, nhưng không push noti
-    _loadInitialOtpLogs(); // Backup load for OTP logs
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {});
-    });
+    _listenToAccessLogs();
+    _loadInitialOtpLogs();
   }
 
   @override
@@ -55,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _timer?.cancel();
     _awayModeSubscription?.cancel();
     _otpLogsSubscription?.cancel();
-    _logsSubscription?.cancel(); // Đảm bảo hủy subscription này
+    _logsSubscription?.cancel();
     super.dispose();
   }
 
@@ -83,12 +80,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Phương thức lắng nghe Access Logs - CHỈ ĐỂ CẬP NHẬT UI, KHÔNG GỬI THÔNG BÁO
   void _listenToAccessLogs() {
     _logsSubscription = _firebaseService.getLogsStream().listen((logs) {
       if (logs.isNotEmpty && mounted) {
-        final AccessLog latestLog = logs.first; // Lấy log mới nhất để hiển thị nếu cần
-
+        final AccessLog latestLog = logs.first;
         print('New Access Log detected (for UI): Method: ${latestLog.method}, Success: ${latestLog.success}, AwayMode: $_awayMode, Timestamp: ${latestLog.timestamp}');
       }
     }, onError: (error) {
@@ -269,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: RefreshIndicator(
         onRefresh: _refreshData,
         child: SingleChildScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -320,6 +316,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
               OtpHistoryCard(otpLogs: _otpLogs),
+              const SizedBox(height: 16),
+              CardManagementSection(), // THÊM WIDGET QUẢN LÝ THẺ MỚI VÀO ĐÂY
               const SizedBox(height: 16),
               PasswordCard(
                 mainPassController: _mainPassCtrl,

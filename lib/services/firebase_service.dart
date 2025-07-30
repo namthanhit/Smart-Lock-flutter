@@ -1,6 +1,7 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/access_log.dart';
 import 'dart:math'; // Import thư viện 'dart:math' để sử dụng Random
+import '../models/card_item.dart';
 
 class FirebaseService {
   static final _instance = FirebaseService._internal();
@@ -10,6 +11,8 @@ class FirebaseService {
   final _db = FirebaseDatabase.instance.ref();
   int _lastRequestTime = 0;
   static const _requestInterval = 1000;
+
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
 
   Future<void> _rateLimitRequest() async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -294,59 +297,35 @@ class FirebaseService {
     });
   }
 
-  // Cleanup methods
-  /// Method để xóa logs cũ
-  Future<void> cleanupOldLogs({int keepLastDays = 30}) async {
-    await _rateLimitRequest();
-    try {
-      final cutoffTime = DateTime.now().subtract(Duration(days: keepLastDays)).millisecondsSinceEpoch ~/ 1000;
-      final snap = await _db.child('logs').get();
+  // --- QUẢN LÝ THẺ (MỚI) ---
 
-      if (snap.exists) {
-        final batch = <String>[];
-        for (var entry in snap.children) {
-          final data = Map<String, dynamic>.from(entry.value as Map);
-          if ((data['timestamp'] as int) < cutoffTime) {
-            batch.add(entry.key!);
+  // Lấy stream của tất cả các thẻ từ node 'allowedCards'
+  Stream<List<CardItem>> getCardsStream() {
+    return _dbRef.child('allowedCards').onValue.map((event) { // THAY ĐỔI TỪ 'cards' SANG 'allowedCards'
+      final List<CardItem> cards = [];
+      if (event.snapshot.value != null) {
+        final Map<dynamic, dynamic> map = event.snapshot.value as Map<dynamic, dynamic>;
+        map.forEach((key, value) {
+          try {
+            cards.add(CardItem.fromMap(key, value));
+          } catch (e) {
+            print('Error parsing card $key: $e');
           }
-        }
-
-        // Xóa theo batch để tránh rate limit
-        for (var key in batch) {
-          await _db.child('logs/$key').remove();
-          await Future.delayed(const Duration(milliseconds: 100)); // Throttle deletions
-        }
+        });
       }
-    } catch (e) {
-      throw Exception('Lỗi xóa logs cũ: $e');
-    }
+      cards.sort((a, b) => (a.name ?? a.id).compareTo(b.name ?? b.id)); // Sắp xếp theo tên hoặc ID
+      return cards;
+    });
   }
 
-  /// Method để xóa OTP history cũ
-  Future<void> cleanupOldOtpHistory({int keepLastDays = 30}) async {
-    await _rateLimitRequest();
-    try {
-      final cutoffTime = DateTime.now().subtract(Duration(days: keepLastDays)).millisecondsSinceEpoch ~/ 1000;
-      final snap = await _db.child('otpHistory').get();
+  // Cập nhật tên của một thẻ, ghi vào trường 'name' bên trong node của thẻ đó
+  Future<void> updateCardName(String cardId, String newName) async {
+    await _dbRef.child('allowedCards').child(cardId).update({'name': newName}); // THAY ĐỔI ĐƯỜNG DẪN VÀ THÊM TRƯỜNG 'name'
+  }
 
-      if (snap.exists) {
-        final batch = <String>[];
-        for (var entry in snap.children) {
-          final data = Map<String, dynamic>.from(entry.value as Map);
-          if ((data['createdAt'] as int) < cutoffTime) {
-            batch.add(entry.key!);
-          }
-        }
-
-        // Xóa theo batch
-        for (var key in batch) {
-          await _db.child('otpHistory/$key').remove();
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-      }
-    } catch (e) {
-      throw Exception('Lỗi xóa OTP history cũ: $e');
-    }
+  // Xóa một thẻ khỏi node 'allowedCards'
+  Future<void> deleteCard(String cardId) async {
+    await _dbRef.child('allowedCards').child(cardId).remove(); // THAY ĐỔI ĐƯỜNG DẪN
   }
 
   // Connection status

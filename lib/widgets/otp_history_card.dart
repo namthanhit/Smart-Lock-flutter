@@ -1,8 +1,11 @@
+// lib/widgets/otp_history_card.dart
 import 'package:flutter/material.dart';
-import '../models/access_log.dart';
-import '../utils/date_utils.dart';
+import '../models/access_log.dart'; // Sử dụng đúng file này chứa OtpLog
+import '../utils/date_utils.dart'; // Sử dụng file tiện ích ngày tháng của bạn
+import 'dart:async'; // Cần import này cho Timer
 
-class OtpHistoryCard extends StatelessWidget {
+// Chuyển OtpHistoryCard từ StatelessWidget sang StatefulWidget
+class OtpHistoryCard extends StatefulWidget {
   final List<OtpLog> otpLogs;
 
   const OtpHistoryCard({
@@ -11,27 +14,63 @@ class OtpHistoryCard extends StatelessWidget {
   });
 
   @override
+  State<OtpHistoryCard> createState() => _OtpHistoryCardState();
+}
+
+class _OtpHistoryCardState extends State<OtpHistoryCard> {
+  Timer? _countdownTimer; // Đổi tên timer để rõ ràng hơn
+
+  @override
+  void initState() {
+    super.initState();
+    // Khởi tạo timer để cập nhật UI mỗi giây
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) { // Đảm bảo widget vẫn còn trên cây widget và có thể setState
+        setState(() {
+          // Chỉ cần gọi setState để hàm build được gọi lại,
+          // và `AppDateUtils.formatCountdown` sẽ tính toán thời gian mới nhất.
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel(); // Hủy timer khi widget bị loại bỏ
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Lịch sử OTP', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
-            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Lịch sử OTP', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+                Icon(Icons.history, color: Theme.of(context).colorScheme.primary),
+              ],
+            ),
+            const Divider(height: 24),
             SizedBox(
               height: 200,
-              child: otpLogs.isEmpty
-                  ? const Center(child: Text('Chưa có OTP nào', style: TextStyle(fontSize: 14)))
+              child: widget.otpLogs.isEmpty
+                  ? const Center(child: Text('Chưa có OTP nào', style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic)))
                   : ListView.separated(
-                itemCount: otpLogs.length,
+                itemCount: widget.otpLogs.length,
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (context, index) {
-                  final otp = otpLogs[index];
+                  final otp = widget.otpLogs[index];
+
                   final isExpired = (DateTime.now().millisecondsSinceEpoch ~/ 1000) > otp.expireAt;
 
-                  // Xác định trạng thái: Ưu tiên "Đã dùng" nếu OTP đã được sử dụng
                   String status;
                   Color iconColor;
                   IconData iconData;
@@ -55,9 +94,15 @@ class OtpHistoryCard extends StatelessWidget {
                       iconData,
                       color: iconColor,
                     ),
-                    title: Text('Mã OTP: ${otp.code}'),
+                    title: Text(
+                      'Mã OTP: ${otp.code}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold, // Giữ đậm
+                      ),
+                    ),
                     subtitle: Text(
-                        'Tạo lúc: ${AppDateUtils.formatTimestamp(otp.createdAt)}\nHiệu lực: ${AppDateUtils.formatCountdown(otp.expireAt, isUsed: otp.used)}'),
+                        'Tạo lúc: ${AppDateUtils.formatTimestamp(otp.createdAt)}\nHiệu lực: ${AppDateUtils.formatCountdown(otp.expireAt, isUsed: otp.used)}'
+                    ),
                     trailing: Text(status),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   );

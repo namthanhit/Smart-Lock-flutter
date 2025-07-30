@@ -8,7 +8,8 @@ import '../widgets/otp_card.dart';
 import '../widgets/otp_history_card.dart';
 import '../widgets/password_card.dart';
 import '../widgets/logs_section.dart';
-import '../widgets/card_management_section.dart'; // Import widget mới
+import '../widgets/card_management_section.dart';
+import '../screens/notification_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -245,19 +246,16 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         actions: [
-          StreamBuilder<bool>(
-            stream: _firebaseService.getConnectionStream(),
-            builder: (context, snapshot) {
-              final isConnected = snapshot.data ?? false;
-              return Container(
-                margin: const EdgeInsets.only(right: 16),
-                child: Icon(
-                  isConnected ? Icons.wifi : Icons.wifi_off,
-                  color: isConnected ? Colors.white : Colors.red.shade300,
-                  size: 20,
-                ),
+          // MỚI: Biểu tượng thông báo
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const NotificationHistoryScreen()),
               );
             },
+            tooltip: 'Lịch sử thông báo',
           ),
         ],
       ),

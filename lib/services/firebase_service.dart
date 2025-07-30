@@ -1,7 +1,8 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/access_log.dart';
-import 'dart:math'; // Import thư viện 'dart:math' để sử dụng Random
+import 'dart:math';
 import '../models/card_item.dart';
+import '../models/notification_log.dart';
 
 class FirebaseService {
   static final _instance = FirebaseService._internal();
@@ -162,7 +163,7 @@ class FirebaseService {
     });
   }
 
-  // Phương thức tạo OTP với mã cụ thể (giữ nguyên nếu cần dùng lại)
+  // Phương thức tạo OTP với mã cụ thể
   Future<void> createOtp(String code, int expireAt) async {
     await _rateLimitRequest();
     try {
@@ -264,40 +265,7 @@ class FirebaseService {
       return '123456';
     });
   }
-
-  // Statistics methods
-  /// Stream để lắng nghe thống kê realtime
-  Stream<Map<String, int>> getStatsStream() {
-    return getLogsStream().map((logs) {
-      int successCount = 0;
-      int failureCount = 0;
-      int todayCount = 0;
-
-      final today = DateTime.now();
-      final todayStart = DateTime(today.year, today.month, today.day).millisecondsSinceEpoch ~/ 1000;
-
-      for (var log in logs) {
-        if (log.success) {
-          successCount++;
-        } else {
-          failureCount++;
-        }
-
-        if (log.timestamp >= todayStart) {
-          todayCount++;
-        }
-      }
-
-      return {
-        'total': logs.length,
-        'success': successCount,
-        'failure': failureCount,
-        'today': todayCount,
-      };
-    });
-  }
-
-  // --- QUẢN LÝ THẺ (MỚI) ---
+  // --- QUẢN LÝ THẺ ---
 
   // Lấy stream của tất cả các thẻ từ node 'allowedCards'
   Stream<List<CardItem>> getCardsStream() {
@@ -326,6 +294,24 @@ class FirebaseService {
   // Xóa một thẻ khỏi node 'allowedCards'
   Future<void> deleteCard(String cardId) async {
     await _dbRef.child('allowedCards').child(cardId).remove(); // THAY ĐỔI ĐƯỜNG DẪN
+  }
+
+  // Stream để lấy lịch sử thông báo
+  Stream<List<NotificationLog>> getNotificationHistoryStream() {
+    return _db.child('notificationHistory').orderByChild('notificationTimestamp').onValue.map((event) {
+      final List<NotificationLog> logs = [];
+      final data = event.snapshot.value;
+      if (data != null && data is Map) {
+        data.forEach((key, value) {
+          final map = Map<String, dynamic>.from(value as Map);
+          logs.add(NotificationLog.fromMap(key, map));
+        });
+      }
+      // Đảo ngược danh sách để thông báo mới nhất hiển thị đầu tiên
+      return logs.reversed.toList();
+    }).handleError((e) {
+      throw Exception('Lỗi stream lịch sử thông báo: $e');
+    });
   }
 
   // Connection status

@@ -77,7 +77,7 @@ class NotificationHistoryScreen extends StatelessWidget {
                           Icon(Icons.history, size: 16, color: Colors.grey[600]),
                           const SizedBox(width: 4),
                           Text(
-                            'Sự kiện gốc: ${log.formattedLogTime} (${log.method})',
+                            'Sự kiện gốc: ${log.formattedLogTime}',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                           ),
                         ],

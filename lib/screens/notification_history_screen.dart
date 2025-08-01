@@ -37,6 +37,10 @@ class NotificationHistoryScreen extends StatelessWidget {
           }
 
           final notifications = snapshot.data!;
+          // THAY ĐỔI: Sắp xếp lại danh sách để thông báo mới nhất ở trên cùng
+          // So sánh dựa trên 'notificationTimestamp' giảm dần
+          notifications.sort((a, b) => b.notificationTimestamp.compareTo(a.notificationTimestamp));
+
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),

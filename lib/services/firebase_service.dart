@@ -3,6 +3,7 @@ import '../models/access_log.dart';
 import 'dart:math';
 import '../models/card_item.dart';
 import '../models/notification_log.dart';
+import 'package:flutter/foundation.dart'; // Thêm dòng này
 
 class FirebaseService {
   static final _instance = FirebaseService._internal();
@@ -312,6 +313,34 @@ class FirebaseService {
     }).handleError((e) {
       throw Exception('Lỗi stream lịch sử thông báo: $e');
     });
+  }
+
+  // NEW: Smart Lock Control methods
+  // Stream để lắng nghe trạng thái khóa hiện tại (mở/đóng)
+  Stream<bool> getLockStatusStream() {
+    return _db.child('lockStatus/isOpen').onValue.map((event) {
+      return event.snapshot.exists ? event.snapshot.value as bool : false; // Mặc định là đóng nếu không tồn tại
+    }).handleError((e) {
+      debugPrint('DEBUG ERROR: Lỗi stream trạng thái khóa: $e');
+      throw Exception('Lỗi stream trạng thái khóa: $e');
+    });
+  }
+
+  // Phương thức để cập nhật trạng thái khóa
+  Future<void> setLockStatus(bool isOpen) async {
+    await _rateLimitRequest();
+    try {
+      await _db.child('lockStatus/isOpen').set(isOpen);
+      // Ghi log vào 'logs' khi có hành động mở/khóa từ ứng dụng
+      await _db.child('logs').push().set({
+        'method': isOpen ? 'Manual Unlock (App)' : 'Manual Lock (App)',
+        'success': true,
+        'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      });
+    } catch (e) {
+      debugPrint('DEBUG ERROR: Lỗi cập nhật trạng thái khóa: $e');
+      throw Exception('Lỗi cập nhật trạng thái khóa: $e');
+    }
   }
 
   // Connection status

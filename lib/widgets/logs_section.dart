@@ -93,7 +93,7 @@ class _LogsSectionState extends State<LogsSection> {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 300,
+              height: 600,
               child: _buildLogsList(),
             ),
           ],
